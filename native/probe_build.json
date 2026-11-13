@@ -10,18 +10,6 @@
       "source_sha256": "70792ff7fcc93ec0a21efbd0294faf89bbab46bc1a6e612415377fe85b3e6ae9",
       "supports_controlled_game_calls": false
     },
-    "probe_test_host": {
-      "filename": "probe_test_host_b36ec3bcd655.exe",
-      "sha256": "238e34039ec4ad5bc7a8fc04b50f469559ea9394db8e81590585f6d94251e6af",
-      "source_sha256": "b36ec3bcd6559160cec88a2a8f72b817f6df62c0e309d7d09f138a1defe41e55",
-      "supports_controlled_game_calls": false
-    },
-    "lease_clock_test": {
-      "filename": "lease_clock_test_1ccbd7de95d6.exe",
-      "sha256": "e3d89d4662fd63d309aa11e11e5a7305d955ff1d52ec18ed435dc66cf1c0f0b0",
-      "source_sha256": "1ccbd7de95d694c563574f002d1050fc775e85e99992f912355eda49a65c7f7e",
-      "supports_controlled_game_calls": false
-    },
     "macro_cycle": {
       "filename": "macro_cycle_94b7913063c9.dll",
       "sha256": "3afcba66ff4a458cd68c1b6ee67b82f2fa738e62aa2b86e4a2d8baa22c623c22",
