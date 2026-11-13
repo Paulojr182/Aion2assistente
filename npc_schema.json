@@ -1,0 +1,170 @@
+{
+  "name": "NpcDataTableItem",
+  "old_index": 18116,
+  "size": 360,
+  "alignment": 8,
+  "fields": [
+    {
+      "name": "ID",
+      "offset": 8,
+      "kind": "StructProperty",
+      "number": 0,
+      "count": 1,
+      "stride": 4,
+      "type_id": 1048576,
+      "cast_flags": 1081345
+    },
+    {
+      "name": "Name",
+      "offset": 12,
+      "kind": "NameProperty",
+      "number": 0,
+      "count": 1,
+      "stride": 8,
+      "type_id": 8192,
+      "cast_flags": 40961
+    },
+    {
+      "name": "Desc",
+      "offset": 20,
+      "kind": "StructProperty",
+      "number": 0,
+      "count": 1,
+      "stride": 8,
+      "type_id": 1048576,
+      "cast_flags": 1081345
+    },
+    {
+      "name": "SubDesc",
+      "offset": 28,
+      "kind": "StructProperty",
+      "number": 0,
+      "count": 1,
+      "stride": 8,
+      "type_id": 1048576,
+      "cast_flags": 1081345
+    },
+    {
+      "name": "ResourceKey",
+      "offset": 36,
+      "kind": "NameProperty",
+      "number": 0,
+      "count": 1,
+      "stride": 8,
+      "type_id": 8192,
+      "cast_flags": 40961
+    },
+    {
+      "name": "Level",
+      "offset": 56,
+      "kind": "IntProperty",
+      "number": 0,
+      "count": 1,
+      "stride": 4,
+      "type_id": 128,
+      "cast_flags": 16810113
+    },
+    {
+      "name": "NpcType",
+      "offset": 60,
+      "kind": "EnumProperty",
+      "number": 0,
+      "count": 1,
+      "stride": 1,
+      "type_id": 281474976710656,
+      "cast_flags": 281474976743425
+    },
+    {
+      "name": "NpcSubType",
+      "offset": 61,
+      "kind": "EnumProperty",
+      "number": 0,
+      "count": 1,
+      "stride": 1,
+      "type_id": 281474976710656,
+      "cast_flags": 281474976743425
+    },
+    {
+      "name": "NpcCreatureType",
+      "offset": 62,
+      "kind": "EnumProperty",
+      "number": 0,
+      "count": 1,
+      "stride": 1,
+      "type_id": 281474976710656,
+      "cast_flags": 281474976743425
+    },
+    {
+      "name": "RelationshipEntity",
+      "offset": 65,
+      "kind": "EnumProperty",
+      "number": 0,
+      "count": 1,
+      "stride": 1,
+      "type_id": 281474976710656,
+      "cast_flags": 281474976743425
+    },
+    {
+      "name": "bCanBeAttacked",
+      "offset": 84,
+      "kind": "BoolProperty",
+      "number": 0,
+      "count": 1,
+      "stride": 1,
+      "type_id": 131072,
+      "cast_flags": 163841
+    },
+    {
+      "name": "NpcTargetAble",
+      "offset": 200,
+      "kind": "EnumProperty",
+      "number": 0,
+      "count": 1,
+      "stride": 1,
+      "type_id": 281474976710656,
+      "cast_flags": 281474976743425
+    },
+    {
+      "name": "bMouseOverAble",
+      "offset": 201,
+      "kind": "BoolProperty",
+      "number": 0,
+      "count": 1,
+      "stride": 1,
+      "type_id": 131072,
+      "cast_flags": 163841
+    },
+    {
+      "name": "bNamed",
+      "offset": 209,
+      "kind": "BoolProperty",
+      "number": 0,
+      "count": 1,
+      "stride": 1,
+      "type_id": 131072,
+      "cast_flags": 163841
+    },
+    {
+      "name": "FunctionType",
+      "offset": 210,
+      "kind": "EnumProperty",
+      "number": 0,
+      "count": 1,
+      "stride": 1,
+      "type_id": 281474976710656,
+      "cast_flags": 281474976743425
+    },
+    {
+      "name": "InteractRange",
+      "offset": 232,
+      "kind": "UInt32Property",
+      "number": 0,
+      "count": 1,
+      "stride": 4,
+      "type_id": 2048,
+      "cast_flags": 16812033
+    }
+  ],
+  "observed_index_hint": 18128,
+  "hint_observed_build": "26429009"
+}

@@ -1,0 +1,35 @@
+[
+ {
+  "name": "mouse_gate_handler",
+  "old_rva": 149834160,
+  "expected": "48895c2408574883ec20488bfa488bd9e88b9e18003c010f8480000000488b0d34760e064885c97474488b01ff500884c0746ae8b83e16004885c074604883b830040000007456488bcbe8619dffff4885c074498b4808f7",
+  "operands": [
+   [
+    17,
+    21
+   ],
+   [
+    32,
+    36
+   ],
+   [
+    52,
+    56
+   ],
+   [
+    75,
+    79
+   ]
+  ],
+  "radius": 33554432,
+  "derive": {
+   "mouse_gate_global": {
+    "instruction_offset": 29,
+    "disp_at": 32,
+    "end": 36,
+    "global_rva": 251445256
+   }
+  },
+  "note": "Handler normal de Move_Forward; [rip+disp] aponta o objeto global cuja +0x240 = mouse sobre o jogo."
+ }
+]

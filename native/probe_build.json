@@ -1,0 +1,74 @@
+{
+  "schema": 1,
+  "scope": "independent_thread_probes_and_controlled_macro_cycle",
+  "toolchain_release": "https://github.com/mstorsjo/llvm-mingw/releases/tag/20261104",
+  "toolchain_archive_sha256": "552191b5754c49a5a20723276a6fc56541ea1922c4c50b7b669022333fc1b40f",
+  "artifacts": {
+    "background_probe": {
+      "filename": "background_probe_70792ff7fcc9.dll",
+      "sha256": "87ee179616ae8e476bc845bb8b0ab1487f5e7e014deed996370162f0ed864ab6",
+      "source_sha256": "70792ff7fcc93ec0a21efbd0294faf89bbab46bc1a6e612415377fe85b3e6ae9",
+      "supports_controlled_game_calls": false
+    },
+    "probe_test_host": {
+      "filename": "probe_test_host_b36ec3bcd655.exe",
+      "sha256": "238e34039ec4ad5bc7a8fc04b50f469559ea9394db8e81590585f6d94251e6af",
+      "source_sha256": "b36ec3bcd6559160cec88a2a8f72b817f6df62c0e309d7d09f138a1defe41e55",
+      "supports_controlled_game_calls": false
+    },
+    "lease_clock_test": {
+      "filename": "lease_clock_test_1ccbd7de95d6.exe",
+      "sha256": "e3d89d4662fd63d309aa11e11e5a7305d955ff1d52ec18ed435dc66cf1c0f0b0",
+      "source_sha256": "1ccbd7de95d694c563574f002d1050fc775e85e99992f912355eda49a65c7f7e",
+      "supports_controlled_game_calls": false
+    },
+    "macro_cycle": {
+      "filename": "macro_cycle_94b7913063c9.dll",
+      "sha256": "3afcba66ff4a458cd68c1b6ee67b82f2fa738e62aa2b86e4a2d8baa22c623c22",
+      "source_sha256": "94b7913063c96602ad4fa06247febeeb868477b8df5c949211777f178ad88e09",
+      "supports_controlled_game_calls": true
+    },
+    "movement_cycle": {
+      "filename": "movement_cycle_3ad112bec0b2.dll",
+      "sha256": "99f6f2cffb0269fb733c859dbb81a83091264f840a53d45fd9574866a4e65aa4",
+      "source_sha256": "3ad112bec0b28a07f1c28bc1bed35b0af987e2fb0f68565e1762f632e0c3fdf3",
+      "supports_controlled_game_calls": true
+    },
+    "flight_toggle": {
+      "filename": "flight_toggle_b3a43a2e1baa.dll",
+      "sha256": "3bd2696800b90ab70f7577763625e71ef54087a6d88b75ded64fec568c5ad9fc",
+      "source_sha256": "b3a43a2e1baae42a84c344268f2fe365f39456763493825383e30a43037f7878",
+      "supports_controlled_game_calls": true
+    },
+    "flight_movement": {
+      "filename": "flight_movement_234072ad76de.dll",
+      "sha256": "6740c1f8c2eba3c519adab17250b2b79259c9be8a00ae9f7a94e03cb1b0ca28b",
+      "source_sha256": "234072ad76ded8a719e140b05f333c15ee98ec2fa56d03fa8843138d8fbcc0cd",
+      "supports_controlled_game_calls": true
+    },
+    "axis_pulse": {
+      "filename": "axis_pulse_3b0e7619f4d5.dll",
+      "sha256": "67e80829afafb3f5a3191c4ab93fffdd29e6f315a7fefb5e44eb71778c7abd94",
+      "source_sha256": "3b0e7619f4d596df09738e24452ea68243f1e4bdfca8cfb947d1c282a7d338e3",
+      "supports_controlled_game_calls": true
+    },
+    "auto_move": {
+      "filename": "auto_move_847d6acbfaa7.dll",
+      "sha256": "90fbd6c993e709dbdebdc0d149573dd5afc385c740df31219993e7615846c0e1",
+      "source_sha256": "847d6acbfaa7b299e16170df704af1890df86ef155dcdab495133adc75eee273",
+      "supports_controlled_game_calls": true
+    },
+    "autorun_toggle": {
+      "filename": "autorun_toggle_6a55417098cb.dll",
+      "sha256": "58ac8e94f06035c160859a14b35952962bbfc5f842f6b6354092b281f3b577d7",
+      "source_sha256": "6a55417098cb998127ec6b0451bcbe3c14c8791820b9ffd9b7114bd5a948e874",
+      "supports_controlled_game_calls": true
+    },
+    "flight_forward": {
+      "filename": "flight_forward_4e58bb7d24c0.dll",
+      "sha256": "e3a3061320ddbf2c79de7f25aa4467839819b89fca1aceab0e154369ccfc7b3d",
+      "source_sha256": "4e58bb7d24c03d38efbea1e45a1655c06f50cce22c66c7c37a72a29fd97294a7",
+      "supports_controlled_game_calls": true
+    }
+  }
+}

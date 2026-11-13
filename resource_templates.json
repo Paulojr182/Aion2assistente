@@ -1,0 +1,79 @@
+[
+  {
+    "name": "lookup",
+    "old_rva": 145057392,
+    "expected": "8b4110440fb6d23b413c743d4c8b41484c8d49408b5150ffca4923d24d85c04d0f45c8458b0491418bc04183f8ff7419488b51084898488d0c40443814ca74108b44ca1083f8ff75eb33c0c30f1f40004963c0488d0c40488d0ccd00000000443814117412448b4411104183f8ff75e033c0488b4008c3488d0411488b441108c3",
+    "operands": [],
+    "calls": []
+  },
+  {
+    "name": "actor_source",
+    "old_rva": 160368474,
+    "expected": "498b4c2438e8cccbfdfe488bf04885c00f84b8010000410fb68da8000000ffc983f9060f87a5010000488d0576f870f64863c98b94884c098f094803d0ffe2",
+    "operands": [
+      [
+        6,
+        10
+      ],
+      [
+        44,
+        48
+      ]
+    ],
+    "calls": [
+      6
+    ],
+    "absolute_operands": [
+      [
+        54,
+        498
+      ]
+    ],
+    "jump_table_expected": "99078f091c088f095a088f0987088f0995088f09d5088f09e3088f09"
+  },
+  {
+    "name": "health",
+    "old_rva": 160368556,
+    "expected": "b201498bcbe8ba5e16ff0f57c0b209498bcbf3480f2ac0f30f1107e8a45e16ff488bd8eb02891f0f57c0488bcef3480f2ac3f3410f1107",
+    "operands": [
+      [
+        6,
+        10
+      ],
+      [
+        28,
+        32
+      ]
+    ],
+    "calls": [
+      6,
+      28
+    ]
+  },
+  {
+    "name": "mana",
+    "old_rva": 160368691,
+    "expected": "b202498bcbe8335e16ffb20a498bcb660f6ec00f5bc0f30f1107e81e5e16ff488bd8e9c2000000",
+    "operands": [
+      [
+        6,
+        10
+      ],
+      [
+        27,
+        31
+      ]
+    ],
+    "calls": [
+      6,
+      27
+    ]
+  },
+  {
+    "name": "mana_max_conversion",
+    "old_rva": 160368924,
+    "expected": "660f6ec30f5bc0f3410f1107",
+    "operands": [],
+    "calls": []
+  }
+]
