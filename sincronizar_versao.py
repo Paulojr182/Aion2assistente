@@ -24,7 +24,12 @@ RESULT = BASE / 'data' / 'sync_result.json'
 # sao reencontrados pelo proprio bot a cada conexao (busca com raio); aqui so recebem uma dica melhor.
 ESSENTIAL_FILES = {'macro_state_templates.json', 'input_gate_templates.json'}
 
+# Planejamento legado: pode ser desativado sem bloquear ataque/coleta atuais.
+OPTIONAL_NATIVE = {('auto_move_fingerprints.h', 'stop_move')}
+
 def essential(sig):
+    if (sig['source'], sig.get('name')) in OPTIONAL_NATIVE:
+        return False
     return sig['source'].endswith('_fingerprints.h') or sig['source'] in ESSENTIAL_FILES
 
 
@@ -192,11 +197,13 @@ def main():
                  f'expected_game_image_size={size}']
         for s in sigs:
             if s['source'].endswith('_fingerprints.h') and not s.get('data_global'):
-                lines.append(f"{s['name']}_rva={s['new_rva']}")
+                lines.append(f"{s['name']}_rva={s.get('new_rva', 0)}")
         same_version = old_size == size and not moved_essential
+        legacy_plan_available = all(s.get('new_rva') is not None for s in sigs
+                                    if (s['source'], s['name']) in OPTIONAL_NATIVE)
         for s in sigs:
             if s.get('data_global'):          # endereco de dado sem assinatura propria: so vale na versao capturada
-                lines.append(f"{s['name']}_rva={s['old_rva'] if same_version else 0}")
+                lines.append(f"{s['name']}_rva={s['old_rva'] if same_version and legacy_plan_available else 0}")
         for key, value in derived.items():
             lines.append(f'{key}_rva={value}')
         OFFSETS.write_text('\n'.join(lines) + '\n', encoding='ascii')
@@ -204,6 +211,10 @@ def main():
                       message=('Bot ja estava sincronizado com esta versao do jogo.' if same_version else
                                f'Sincronizado com a nova versao do jogo ({len(moved_essential)} endereco(s) atualizados). Clique em Conectar de novo.'))
         result['moved'] = len(moved_essential)
+        result['disabled_native'] = [s['name'] for s in missing
+                                     if (s['source'], s['name']) in OPTIONAL_NATIVE]
+        if result['disabled_native']:
+            result['message'] += ' Planejamento de rota legado indisponivel; ataque e coleta atuais mantidos.'
         print(result['message']); return 0
     except SystemExit as exc:
         result['message'] = str(exc); print(exc); return 1
