@@ -514,7 +514,7 @@ class App:
         def connect():
             data=BASE/'data';data.mkdir(exist_ok=True)
             with (data/'combat_launcher.log').open('w',encoding='utf-8') as log:
-                child=subprocess.Popen(['powershell.exe','-NoProfile','-ExecutionPolicy','RemoteSigned','-File',str(BASE/'IniciarCombate.ps1'),'-Token',token],
+                child=subprocess.Popen(['powershell.exe','-NoProfile','-ExecutionPolicy','Bypass','-File',str(BASE/'IniciarCombate.ps1'),'-Token',token],
                     cwd=BASE,stdout=log,stderr=log,creationflags=subprocess.CREATE_NO_WINDOW,env=bot_env())
                 deadline=time.monotonic()+60
                 while time.monotonic()<deadline and not self.cancel_connect.is_set():
