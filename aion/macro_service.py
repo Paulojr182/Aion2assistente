@@ -45,12 +45,20 @@ def _parse_options():
             combat_names = [x.strip() for x in opts.get('combat_targets', '').split(',') if x.strip()]
             combo = parse_combo(opts.get('combat_combo', '')) if opts.get('combat_style') == 'combo' else ()
             gather_names = [x.strip() for x in opts.get('gather_targets', '').split(',') if x.strip()]
+            waypoints = []
+            for part in opts.get('gather_waypoints', '').split(';'):
+                try:
+                    pt = tuple(float(v) for v in part.split(','))
+                    if len(pt) == 3: waypoints.append(pt)
+                except ValueError:
+                    pass
             try:
                 stamina = max(0.0, min(1.0, float(opts.get('flight_min_stamina_pct', 70)) / 100.0))
             except Exception:
                 stamina = 0.70
             return {'center': center, 'radius': radius, 'flight_min_stamina': stamina, 'combo': combo,
-                    'combat_names': combat_names, 'gather_names': gather_names,
+                    'combat_names': combat_names, 'gather_names': gather_names, 'waypoints': waypoints,
+                    'ground_only': bool(opts.get('gather_ground_only')),
                     'combat_exclude': bool(opts.get('combat_exclude_targets')),
                     'gather_exclude': bool(opts.get('gather_exclude_targets'))}
     except Exception:
@@ -185,10 +193,17 @@ class MacroService:
         def run():
             nav = None
             try:
-                nav = RouteNavigator(backend, backend.reader, log=log, flight=True)
+                ground_only = bool(opts.get('ground_only'))
+                nav = RouteNavigator(backend, backend.reader, log=log, flight=not ground_only)
                 routine = GatherRoutine(nav, backend, backend.reader, log=log, stop=stop)
                 routine.min_stamina = opts.get('flight_min_stamina', 0.70)
                 routine.names = set(opts['gather_names']) if opts['gather_names'] and not opts['gather_exclude'] else None
+                def refresh_names():
+                    o = _parse_options()
+                    return set(o['gather_names']) if o['gather_names'] and not o['gather_exclude'] else None
+                routine.refresh_names = refresh_names
+                routine.waypoints = list(opts.get('waypoints') or [])
+                routine.ground_only = ground_only
                 self._farm_routine = routine
                 routine.run(radius=opts['radius'], center=opts['center'])
                 if not stop(): log('Coleta encerrada.')

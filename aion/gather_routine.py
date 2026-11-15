@@ -36,6 +36,9 @@ class GatherRoutine:
         self.anchor = None
         self._low_stamina_logged = False
         self.names = None          # nomes amigaveis permitidos (painel); None = todos
+        self.ground_only = False   # True: nunca voa, ignora spots no alto
+        self.waypoints = []        # pontos de rota: sem spot no raio, vai para o proximo
+        self._wp_index = -1
         self.min_stamina = FLIGHT_MIN_STAMINA
 
     # --- percepção ------------------------------------------------------------------------
@@ -172,22 +175,56 @@ class GatherRoutine:
         pos = self.nav.position()
         now = time.monotonic()
         rows = []
+        from .friendly_names import resolve_gather_name
+        why = {}
+        cooled = []   # spots tentados ha pouco; usados se nao houver outro
+        def skip(reason, name):
+            why.setdefault(reason, set()).add(name)
         for r in report.get('targets', ()):
-            if not r.get('mastery_requirement_met') or not r.get('position', {}).get('position_observed'):
+            name = resolve_gather_name(r.get('source', {}).get('name', ''))
+            if self.names and name not in self.names:
                 continue
-            if self.names:
-                from .friendly_names import resolve_gather_name
-                if resolve_gather_name(r.get('source', {}).get('name', '')) not in self.names:
-                    continue
+            if not r.get('mastery_requirement_met'):
+                skip('sem maestria', name); continue
+            if not r.get('position', {}).get('position_observed'):
+                skip('sem posicao lida', name); continue
             if self.radius and self.anchor is not None and math.dist(r['position']['position'][:2], self.anchor[:2]) > self.radius:
-                continue
+                skip('fora do raio', name); continue
             ident = format_gather_identity(r)
-            if now - self.done.get(ident, -1e9) < exclude_seconds:
-                continue
+            age = now - self.done.get(ident, -1e9)
+            if age < exclude_seconds:
+                if age >= 15.0:
+                    cooled.append((math.dist(r['position']['position'], pos), ident, r))
+                skip('coletado ha pouco', name); continue
             rows.append((math.dist(r['position']['position'], pos), ident, r))
+        if not rows and cooled:
+            rows = cooled
+        self.last_skip = '; '.join(f"{k}: {', '.join(sorted(v))}" for k, v in why.items())
         if not rows:
+            try:
+                import json
+                from pathlib import Path
+                dump = {'player': list(pos) if pos else None, 'anchor': list(self.anchor) if self.anchor else None,
+                        'radius': self.radius, 'names': sorted(self.names) if self.names else None,
+                        'report_keys': {k: v for k, v in report.items() if k != 'targets' and isinstance(v, (str, int, float, bool, type(None)))},
+                        'targets': [{'friendly': resolve_gather_name(r.get('source', {}).get('name', '')),
+                                     'raw': r.get('source', {}).get('name'),
+                                     'distance': r.get('distance_engine_units'),
+                                     'mastery': r.get('mastery_requirement_met'),
+                                     'observed': r.get('position', {}).get('position_observed'),
+                                     'position': r.get('position', {}).get('position')} for r in report.get('targets', ())]}
+                Path(__file__).resolve().parent.parent.joinpath('data', 'gather_debug.json').write_text(
+                    json.dumps(dump, indent=2, ensure_ascii=False, default=str), encoding='utf-8')
+            except Exception:
+                pass
             return None
         rows.sort(key=lambda x: x[0])
+        if self.ground_only:
+            rows = [x for x in rows if abs(x[2]['position']['position'][2] - pos[2]) <= AERIAL_HEIGHT]
+            if not rows:
+                self.last_skip = (self.last_skip + '; ' if self.last_skip else '') + 'spots no alto (modo so chao)'
+                return None
+            return rows[0]
         if getattr(self.nav, 'flight', False) and not self.can_fly():
             ground = [x for x in rows if abs(x[2]['position']['position'][2] - pos[2]) <= AERIAL_HEIGHT]
             if len(ground) < len(rows) and not self._low_stamina_logged:
@@ -197,8 +234,6 @@ class GatherRoutine:
                 return None
             return ground[0]
         self._low_stamina_logged = False
-        self.names = None          # nomes amigaveis permitidos (painel); None = todos
-        self.min_stamina = FLIGHT_MIN_STAMINA
         return rows[0]
 
     def can_fly(self):
@@ -210,6 +245,36 @@ class GatherRoutine:
         except Exception:
             return False
 
+    def goto_next_waypoint(self):
+        """Vai ao proximo ponto de rota; o raio passa a ser medido a partir dele."""
+        self._wp_index = (self._wp_index + 1) % len(self.waypoints)
+        goal = tuple(self.waypoints[self._wp_index])
+        self.anchor = goal
+        self.log(f'Sem spot aqui; indo para o ponto {self._wp_index + 1} de {len(self.waypoints)}.')
+        def interrupt():
+            if self.stop(): return 'cancelado'
+            try:
+                if self.attacked(self.transport.snapshot()): return 'atacado'
+            except TRANSIENT:
+                pass
+            return None
+        for _ in range(3):
+            if self.stop(): return False
+            try:
+                result = self.nav.go(goal, reach=1500.0, interrupt=interrupt)
+            except TRANSIENT:
+                time.sleep(0.5); continue
+            except RuntimeError as exc:
+                self.log(f'Falha indo ao ponto ({exc}).')
+                release = getattr(self.nav, 'release_all', None)
+                if release: release()
+                break
+            if result == 'atacado':
+                self.defend(); continue
+            break
+        time.sleep(1.5)        # deixa o jogo carregar os spots da regiao
+        return True
+
     def run(self, max_spots=None, radius=None, center=None):
         self.last_health = self.transport.snapshot().player_health
         self.radius = radius; self.anchor = tuple(center) if center else tuple(self.nav.position())
@@ -217,20 +282,28 @@ class GatherRoutine:
         if radius: self.log(f'Farm no raio de {radius / 100:.0f} m; spot mais proximo (chao ou alto); voo com estamina >= {self.min_stamina:.0%}.')
         waiting = False
         while not self.stop() and (max_spots is None or self.stats['spots'] < max_spots):
+            refresh = getattr(self, 'refresh_names', None)
+            if refresh is not None:
+                try: self.names = refresh()
+                except Exception: pass
             try:
                 pick = self.next_spot()
             except TRANSIENT as exc:
                 self.debug('leitura_transitoria', str(exc)[:120]); time.sleep(0.5); continue
             if pick is None:
-                if self.prompt():                      # F na tela = tem spot aqui, mesmo fora da lista
+                if not self.names and self.prompt():                      # F na tela = tem spot aqui, mesmo fora da lista
                     self.log('F visivel aqui; coletando.')
                     presses = self.collect_here()
                     if presses: self.stats['spots'] += 1
                     continue
-                if not waiting:
-                    self.log('Nenhum spot no raio. Aguardando nascer...')
+                if self.waypoints and self.goto_next_waypoint():
+                    waiting = False; continue
+                skip = getattr(self, 'last_skip', '')
+                if not waiting or skip != getattr(self, '_shown_skip', None):
+                    self._shown_skip = skip
+                    self.log('Nenhum spot no raio. Aguardando nascer...' + (f' (descartados: {skip})' if skip else ' (nenhum spot selecionado visivel)'))
                     land = getattr(self.nav, 'land', None)
-                    if land: land()
+                    if land and not waiting: land()
                 waiting = True
                 if self.attacked(self.transport.snapshot()): self.defend()
                 time.sleep(3); continue

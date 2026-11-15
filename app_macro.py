@@ -178,12 +178,25 @@ class App:
             tk.Label(geo_box, textvariable=self.center_var, bg=PANEL, fg=TEXT, font=('Segoe UI', 9)).pack(anchor='w', pady=(0, 6))
 
             ttk.Button(geo_box, text='Marcar minha posição', command=lambda: self.mark_position(page)).pack(anchor='w', pady=(0, 8))
+            if page == 'gathering':
+                wp_count = len([x for x in opts.get('gather_waypoints', '').split(';') if x.strip()])
+                self.waypoints_var = tk.StringVar(value=f'Pontos de rota: {wp_count}')
+                wp_row = tk.Frame(geo_box, bg=PANEL)
+                wp_row.pack(fill='x', pady=(0, 8))
+                tk.Label(wp_row, textvariable=self.waypoints_var, bg=PANEL, fg=TEXT, font=('Segoe UI', 9)).pack(side='left', padx=(0, 8))
+                ttk.Button(wp_row, text='Adicionar ponto aqui', command=self.add_waypoint).pack(side='left', padx=(0, 4))
+                ttk.Button(wp_row, text='Remover último', command=self.remove_last_waypoint).pack(side='left', padx=(0, 4))
+                ttk.Button(wp_row, text='Limpar pontos', command=self.clear_waypoints).pack(side='left')
+                self.waypoints_list_var = tk.StringVar()
+                tk.Label(geo_box, textvariable=self.waypoints_list_var, bg=PANEL, fg=MUTED, justify='left',
+                         font=('Consolas', 9)).pack(anchor='w', pady=(0, 8))
+                self.show_waypoints()
 
             radius_row = tk.Frame(geo_box, bg=PANEL)
             radius_row.pack(fill='x')
             tk.Label(radius_row, text='Raio:', bg=PANEL, fg=MUTED, font=('Segoe UI', 9)).pack(side='left')
             self.radius_var = tk.StringVar(value=str(opts.get('circle_radius_m', '50')))
-            self.slider(radius_row, self.radius_var, 10, 300, 5, ' m', self.save_radius)
+            self.slider(radius_row, self.radius_var, 10, 1000, 5, ' m', self.save_radius)
             tk.Label(geo_box, text='Raio medido a partir do centro salvo (ou de onde você iniciar, se não marcado).',
                      bg=PANEL, fg=MUTED, font=('Segoe UI', 8)).pack(anchor='w', pady=(2, 0))
             if page == 'gathering':
@@ -194,6 +207,11 @@ class App:
                 self.slider(stamina_row, self.stamina_var, 0, 100, 5, '%', self.save_stamina)
                 tk.Label(geo_box, text='Abaixo disso ele coleta só no chão; acima, sobe para os spots altos.',
                          bg=PANEL, fg=MUTED, font=('Segoe UI', 8)).pack(anchor='w', pady=(2, 0))
+                self.ground_only_var = tk.BooleanVar(value=bool(opts.get('gather_ground_only')))
+                tk.Checkbutton(geo_box, text='Só no chão (nunca voar)', variable=self.ground_only_var,
+                               command=lambda: self.save_option('gather_ground_only', self.ground_only_var.get()),
+                               bg=PANEL, fg=TEXT, selectcolor='#1b2c3f', activebackground=PANEL, activeforeground=TEXT,
+                               font=('Segoe UI', 9)).pack(anchor='w', pady=(8, 0))
 
             # Right box: Target selection
             target_box_title = 'Alvos de combate' if page == 'combat' else 'Recursos para coletar'
@@ -361,6 +379,39 @@ class App:
             self.center_var.set(f"Centro salvo: {pos_str}")
         self.status.set(f"Posição marcada com sucesso: ({pos_str})")
 
+    def waypoint_list(self):
+        return [x.strip() for x in self.load_options().get('gather_waypoints', '').split(';') if x.strip()]
+
+    def show_waypoints(self, points=None):
+        points = self.waypoint_list() if points is None else points
+        if hasattr(self, 'waypoints_var'):
+            self.waypoints_var.set(f'Pontos de rota: {len(points)}')
+        if hasattr(self, 'waypoints_list_var'):
+            self.waypoints_list_var.set('\n'.join(f'Ponto {i}: {p}' for i, p in enumerate(points, 1))
+                                        or 'Nenhum ponto. Vá até o local e clique em "Adicionar ponto aqui".')
+
+    def remove_last_waypoint(self):
+        points = self.waypoint_list()[:-1]
+        self.save_option('gather_waypoints', '; '.join(points))
+        self.show_waypoints(points)
+        self.status.set('Último ponto removido.')
+
+    def add_waypoint(self):
+        pos = self.last_status.get('player_position')
+        if not pos:
+            self.status.set('Posição atual indisponível. Conecte ao jogo para ler sua posição.')
+            return
+        points = [x.strip() for x in self.load_options().get('gather_waypoints', '').split(';') if x.strip()]
+        points.append(f"{pos[0]:.1f}, {pos[1]:.1f}, {pos[2]:.1f}")
+        self.save_option('gather_waypoints', '; '.join(points))
+        self.show_waypoints(points)
+        self.status.set(f'Ponto {len(points)} adicionado à rota.')
+
+    def clear_waypoints(self):
+        self.save_option('gather_waypoints', '')
+        self.show_waypoints([])
+        self.status.set('Pontos de rota apagados.')
+
     def slider(self, parent, var, low, high, step, unit, on_save):
         """Barra deslizante ligada a uma StringVar (o valor salvo continua numerico)."""
         try: start = float(str(var.get()).replace('%', '').strip())
@@ -449,9 +500,10 @@ class App:
         self.nearby_targets_set = set(new_items)
         if new_items:
             old_vars = getattr(self, 'target_vars', {})
-            self.target_pool = list(new_items)
+            kept = [i for i, v in old_vars.items() if v.get() and i not in new_items]
+            self.target_pool = list(new_items) + kept
             self.target_vars = {}
-            for item in new_items:
+            for item in self.target_pool:
                 val = old_vars[item].get() if item in old_vars else True
                 self.target_vars[item] = tk.BooleanVar(value=val)
         self.rebuild_checklist(field)

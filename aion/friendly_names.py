@@ -31,9 +31,8 @@ def resolve_gather_name(raw_name: str) -> str:
     clean = raw_name.lower().strip()
     if clean in GATHER_NAME_MAP:
         return GATHER_NAME_MAP[clean]
-    for key, display in GATHER_NAME_MAP.items():
-        if key in clean:
-            return display
+    # So nomes exatos: chaves genericas (ex.: 'gather_source_food') juntavam recursos
+    # diferentes (Inina, Coriolus...) sob o mesmo nome e o filtro coletava os errados.
     return raw_name.replace('Gather_', '').replace('_', ' ').strip()
 
 
