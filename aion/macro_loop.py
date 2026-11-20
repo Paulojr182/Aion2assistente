@@ -31,7 +31,7 @@ class MacroSnapshot:
 
 
 class MacroLoop:
-    def __init__(self,backend,*,search_interval=1.0,max_age=0.75,center=None,radius=None,names=()):
+    def __init__(self,backend,*,search_interval=0.3,max_age=0.75,center=None,radius=None,names=()):
         self.backend=backend
         self.search_interval=search_interval
         self.max_age=max_age
@@ -65,6 +65,14 @@ class MacroLoop:
             self.backend.stop_macro(force=self.was_running)
             self.was_running=False;self.target=None;self.target_missing_since=None
             return {'state':'stopped','message':'Ataque automático parado.'}
+        if not self.was_running:
+            # Ataque: o raio e medido a partir de onde o play foi dado (sem centro salvo).
+            self.center=None
+            try:
+                pos=self.backend.reader.flight_state().get('position',{}).get('position')
+                if pos: self.center=tuple(pos)
+            except Exception:
+                pass
         self.was_running=True
         if (not snapshot.scope or not math.isfinite(snapshot.captured_at)
             or not 0<=now-snapshot.captured_at<=self.max_age):
@@ -97,8 +105,14 @@ class MacroLoop:
             if not any(matches_target(n, target) for n in self.names):
                 self.backend.stop_macro(force=True)
                 self.target=None
+                if now>=self.next_search:          # ja aperta Tab para o proximo inimigo
+                    self.next_search=now+self.search_interval
+                    try: self.backend.next_target(snapshot)
+                    except TargetChanged: pass
                 return {'state':'searching','message':f'Ignorando {target.label} (não está na lista de alvos).'}
-        if self.center is not None and self.radius is not None and hasattr(self.backend, 'reader'):
+        if (self.center is not None and self.radius is not None and hasattr(self.backend, 'reader')
+                and now>=getattr(self,'_next_radius_check',-math.inf)):
+            self._next_radius_check=now+1.0   # leitura de posicao e cara; 1x por segundo basta
             try:
                 state=self.backend.reader.flight_state()
                 pos=state.get('position',{}).get('position')
@@ -113,10 +127,12 @@ class MacroLoop:
             confirmed_dead=self.target in snapshot.defeated or (
                 target is not None and target.identity==self.target and target.health<=0
             )
+            if confirmed_dead:
+                self.next_search=-math.inf
             if self.target is not None and not confirmed_dead:
                 if self.target_missing_since is None:
                     self.target_missing_since=now
-                if now-self.target_missing_since<1.25:
+                if now-self.target_missing_since<0.4:
                     return {'state':'waiting','message':'Confirmando o alvo atual.'}
             self.target=None
             self.target_missing_since=None
@@ -142,7 +158,7 @@ class MacroLoop:
             self.backend.stop_macro(force=True)
             return {'state':'searching','message':'Atualizando o próximo inimigo.'}
         except MacroNotReady:
-            self.next_macro_try=now+1
+            self.next_macro_try=now+0.3
             return {'state':'waiting','message':'Aguardando o macro ficar disponível.'}
         return {'state':'attacking','message':f'Atacando {target.label} — HP {target.health:,}/{target.maximum:,}'.replace(',','.'),
                 'target_health':target.health,'target_maximum':target.maximum}

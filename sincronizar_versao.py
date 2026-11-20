@@ -110,6 +110,24 @@ def regex(sig):
     return re.compile(b''.join(parts), re.S)
 
 
+RIP_OPS = {0x8b, 0x89, 0x8d, 0x10, 0x11, 0x3b, 0x39, 0x80, 0x83, 0xc7, 0x63, 0xb6, 0xb7, 0x28, 0x29,
+           0x2e, 0x2f, 0x58, 0x59, 0x5a, 0x5c, 0x5e, 0x54, 0x57, 0x33, 0x0b, 0x23, 0x03, 0x2b, 0x85, 0xff, 0x38, 0xc6}
+
+
+def loose(sig):
+    """Copia da assinatura mascarando operandos que mudam entre versoes: call/jmp rel32, jcc rel32 e
+    enderecos [rip+disp32]. Usada so quando a busca exata falha."""
+    raw = sig['raw']; wild = set(sig['wild'])
+    for i, b in enumerate(raw):
+        if b in (0xe8, 0xe9) and i + 5 <= len(raw):
+            wild.update(range(i + 1, i + 5))
+        elif b == 0x0f and i + 6 <= len(raw) and 0x80 <= raw[i + 1] <= 0x8f:
+            wild.update(range(i + 2, i + 6))
+        elif i > 0 and (b & 0xC7) == 0x05 and raw[i - 1] in RIP_OPS and i + 5 <= len(raw):
+            wild.update(range(i + 1, i + 5))
+    return {**sig, 'wild': wild}
+
+
 def main():
     started = time.time()
     result = {'ok': False, 'started_at': started, 'game_actions_executed': False}
@@ -128,8 +146,11 @@ def main():
                         parts = []
                         for off in range(0, STEP + 4096, 65536):
                             n = min(65536, STEP + 4096 - off)
-                            try: parts.append(p.read(p.base + start + off, n))
-                            except Exception: parts.append(bytes(n))
+                            try: parts.append(p.read(p.base + start + off, n)); continue
+                            except Exception: pass
+                            for sub in range(0, n, 4096):      # pagina a pagina: so zera a que falhar
+                                try: parts.append(p.read(p.base + start + off + sub, min(4096, n - sub)))
+                                except Exception: parts.append(bytes(min(4096, n - sub)))
                         cache[start] = b''.join(parts)
                 return cache[start]
             def read(rva, n):
@@ -149,6 +170,14 @@ def main():
                         if m.start() < STEP and start + m.start() not in found:
                             found.append(start + m.start())
                     if len(found) > 1: break
+                if not found:
+                    lrx = regex(loose(s))
+                    for start in range(lo, hi, STEP):
+                        for m in lrx.finditer(chunk(start)):
+                            if m.start() < STEP and start + m.start() not in found:
+                                found.append(start + m.start())
+                        if len(found) > 1: break
+                    if len(found) == 1: s['loose'] = True
                 s['found'] = found[:3]
                 if len(found) == 1: s['new_rva'] = found[0]
             # derivados (enderecos de dados lidos de instrucoes [rip+disp])
@@ -188,8 +217,14 @@ def main():
             path = BASE / name; data = json.loads(path.read_text('utf-8'))
             items = data if isinstance(data, list) else data.get('templates', [])
             dirty = False
+            remap = {}
             for i, rva in changes.items():
-                if items[i]['old_rva'] != rva: items[i]['old_rva'] = rva; dirty = True
+                if items[i]['old_rva'] != rva: remap[items[i]['old_rva']] = rva; items[i]['old_rva'] = rva; dirty = True
+            # Referencias entre funcoes ("calls": [offset, fim, alvo]) acompanham os enderecos novos.
+            for it in items:
+                for call in (it.get('calls') or []) if isinstance(it, dict) else []:
+                    if isinstance(call, list) and len(call) == 3 and call[2] in remap:
+                        call[2] = remap[call[2]]; dirty = True
             if name == 'macro_state_templates.json' and data.get('image_size') != size:
                 data['image_size'] = size; dirty = True
             if dirty: path.write_text(json.dumps(data, indent=1, ensure_ascii=False), 'utf-8')

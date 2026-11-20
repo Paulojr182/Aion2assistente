@@ -23,6 +23,10 @@ class App:
         self.root=root;self.events=queue.Queue();self.pipe=None
         self.busy=False;self.want_running=False;self.pending_stop=False;self.pending_start=False;self.closing=False
         self.current_page='combat';self.desired_task='start'
+        self.pending_scan_page = None
+        self.active_target_scan = None
+        self.quest_rows = {}
+        self.quest_scan_pending = False
         self.cancel_connect=threading.Event();self.last_status={}
         self.active_icon=False
         root.title('AION 2 | Ataque automático');root.geometry('1060x720');root.minsize(900,600);root.configure(bg=BG)
@@ -38,6 +42,7 @@ class App:
         tk.Label(rail,text='Assistente de combate',bg='#101923',fg=MUTED,font=('Segoe UI',9)).pack(anchor='w',padx=22,pady=(0,30))
         ttk.Button(rail,text='Ataque automático',command=lambda:self.show('combat')).pack(fill='x',padx=12,pady=3)
         ttk.Button(rail,text='Coleta',command=lambda:self.show('gathering')).pack(fill='x',padx=12,pady=3)
+        ttk.Button(rail,text='Missões',command=lambda:self.show('quests')).pack(fill='x',padx=12,pady=3)
         ttk.Button(rail,text='Como funciona',command=lambda:self.show('help')).pack(fill='x',padx=12,pady=3)
         self.sync_button=ttk.Button(rail,text='Sincronizar versão do jogo',command=self.sync_version)
         self.sync_button.pack(fill='x',padx=12,pady=(18,3))
@@ -67,6 +72,12 @@ class App:
             pass
         self.connect_button=ttk.Button(footer,text='Conectar',command=self.connect_only)
         self.connect_button.pack(side='left',padx=(12,0))
+        self.relog_task=None;self.player_lost_since=None;self.relogging=False
+        self.auto_relog_var=tk.BooleanVar(value=bool(self.load_options().get('auto_relog')))
+        tk.Checkbutton(footer,text='Reentrar se cair por inatividade',variable=self.auto_relog_var,
+                       command=lambda:self.save_option('auto_relog',self.auto_relog_var.get()),
+                       bg=BG,fg=TEXT,selectcolor='#1b2c3f',activebackground=BG,activeforeground=TEXT,
+                       font=('Segoe UI',9)).pack(side='left',padx=(12,0))
         self.start_button=ttk.Button(footer,text='Iniciar ataque',style='Accent.TButton',command=self.start)
         self.start_button.pack(side='right')
         self.stop_button=ttk.Button(footer,text='Parar',state='disabled',command=self.stop);self.stop_button.pack(side='right',padx=(0,10))
@@ -149,7 +160,7 @@ class App:
         subtitles={
             'combat':'O macro executa o combo. Ao eliminar o alvo, o assistente procura outro inimigo.',
             'gathering':'Farm contínuo: vai sempre ao recurso marcado mais próximo dentro do raio, no chão ou no alto. Spots no alto exigem a estamina de voo mínima abaixo.',
-            'quests':'Em desenvolvimento: leitor de registros e política local prontos; catálogo, alvos e comandos ainda pendentes.',
+            'quests':'Seleciona a missão no rastreador, acompanha o deslocamento e ataca os inimigos ao chegar.',
         }
         self.heading.configure(text=titles.get(page,'Ataque automático'))
         self.subtitle.configure(text=subtitles.get(page,subtitles['combat']))
@@ -163,7 +174,19 @@ class App:
             tk.Label(row,textvariable=variable,bg=PANEL,fg=TEXT,anchor='w',font=('Segoe UI',11,'bold')).pack(side='left')
         note={'combat':'Macro do jogo: usa as habilidades e a ordem do macro que você configurou no AION 2, em qualquer tecla.',
               'gathering':'O mouse fica livre. Só nos spots altos, no ajuste final, o jogo vem para a frente e o mouse é usado por alguns segundos e devolvido. Sem spot no raio: pousa (V) e espera nascer. Espaço na mochila não é conferido.',
-              'quests':'A execução de missões ainda está em desenvolvimento.'}.get(page,'')
+              'quests':'Deixe o rastreador de missões visível. A entrega é manual.'}.get(page,'')
+        if page == 'quests':
+            box = tk.LabelFrame(panel, text='Missões do rastreador', bg=PANEL, fg=GOLD,
+                                font=('Segoe UI', 10, 'bold'), padx=12, pady=5)
+            box.pack(fill='x', padx=22, pady=(10, 10))
+            toolbar = tk.Frame(box, bg=PANEL)
+            toolbar.pack(fill='x')
+            ttk.Button(toolbar, text='Atualizar lista', command=self.refresh_quest_list).pack(side='left')
+            self.quest_list_status = tk.StringVar(value='Atualize a lista com o rastreador visível.')
+            tk.Label(toolbar, textvariable=self.quest_list_status, bg=PANEL, fg=MUTED).pack(side='left', padx=10)
+            self.quest_list = tk.Frame(box, bg=PANEL)
+            self.quest_list.pack(fill='x')
+            self.render_quest_list()
         if page in ('combat', 'gathering'):
             opts = self.load_options()
             area_frame = tk.Frame(panel, bg=PANEL)
@@ -175,9 +198,9 @@ class App:
 
             saved_pos = opts.get('combat_positions', '')
             self.center_var = tk.StringVar(value=f"Centro salvo: {saved_pos}" if saved_pos else "Centro salvo: Não marcado")
-            tk.Label(geo_box, textvariable=self.center_var, bg=PANEL, fg=TEXT, font=('Segoe UI', 9)).pack(anchor='w', pady=(0, 6))
-
-            ttk.Button(geo_box, text='Marcar minha posição', command=lambda: self.mark_position(page)).pack(anchor='w', pady=(0, 8))
+            if page == 'gathering':
+                tk.Label(geo_box, textvariable=self.center_var, bg=PANEL, fg=TEXT, font=('Segoe UI', 9)).pack(anchor='w', pady=(0, 6))
+                ttk.Button(geo_box, text='Marcar minha posição', command=lambda: self.mark_position(page)).pack(anchor='w', pady=(0, 8))
             if page == 'gathering':
                 wp_count = len([x for x in opts.get('gather_waypoints', '').split(';') if x.strip()])
                 self.waypoints_var = tk.StringVar(value=f'Pontos de rota: {wp_count}')
@@ -197,7 +220,8 @@ class App:
             tk.Label(radius_row, text='Raio:', bg=PANEL, fg=MUTED, font=('Segoe UI', 9)).pack(side='left')
             self.radius_var = tk.StringVar(value=str(opts.get('circle_radius_m', '50')))
             self.slider(radius_row, self.radius_var, 10, 1000, 5, ' m', self.save_radius)
-            tk.Label(geo_box, text='Raio medido a partir do centro salvo (ou de onde você iniciar, se não marcado).',
+            tk.Label(geo_box, text=('Raio medido a partir de onde você der play.' if page == 'combat' else
+                                    'Raio medido a partir do centro salvo (ou de onde você iniciar, se não marcado).'),
                      bg=PANEL, fg=MUTED, font=('Segoe UI', 8)).pack(anchor='w', pady=(2, 0))
             if page == 'gathering':
                 stamina_row = tk.Frame(geo_box, bg=PANEL)
@@ -347,6 +371,63 @@ class App:
         if result.get('ok') and result.get('moved') and self.pipe is not None:
             self.status.set(msg + ' Clique em Conectar novamente.')
 
+    def refresh_quest_list(self):
+        if self.quest_scan_pending:
+            return
+        if not self.pipe or not self.last_status.get('connected'):
+            self.quest_list_status.set('Conecte ao jogo antes de atualizar.')
+            return
+        pipe = self.pipe
+        self.quest_scan_pending = True
+        self.quest_list_status.set('Lendo o rastreador…')
+
+        def scan():
+            try:
+                from aion.auto_relog import find_game_window
+                from aion.quest_tracker import (capture_quest_tracker, find_quest_rows,
+                                                quest_title_key, quest_title_preview)
+                session = json.loads((BASE / 'data' / 'combat_session.json').read_text('utf-8'))
+                if session.get('pipe_name') != pipe:
+                    raise RuntimeError('A conexão mudou. Atualize a lista novamente.')
+                image, _ = capture_quest_tracker(find_game_window(session['game_pid']))
+                rows = {}
+                for slot, match in find_quest_rows(image).items():
+                    preview = quest_title_preview(image, *match)
+                    rows[str(slot)] = preview, quest_title_key(preview, match[1])
+                message = (f'{len(rows)} missões encontradas. Marque as que quer fazer.'
+                           if rows else 'Nenhuma missão encontrada. Deixe o rastreador visível.')
+            except (ImportError, OSError, RuntimeError, KeyError, ValueError) as exc:
+                rows, message = {}, f'Falha ao ler o rastreador: {exc}'
+            self.events.put(('quest_list', (pipe, rows, message)))
+
+        threading.Thread(target=scan, daemon=True).start()
+
+    def render_quest_list(self):
+        from aion.quest_tracker import same_quest_title
+
+        for child in self.quest_list.winfo_children():
+            child.destroy()
+        self.quest_vars = {}
+        self.quest_images = []
+        chosen = self.load_options().get('quest_titles') or {}
+        if not self.quest_rows:
+            return
+        from PIL import ImageTk
+
+        for slot, (preview, key) in sorted(self.quest_rows.items()):
+            var = tk.BooleanVar(value=same_quest_title(chosen.get(slot), key))
+            self.quest_vars[slot] = var
+            photo = ImageTk.PhotoImage(preview)
+            self.quest_images.append(photo)
+            tk.Checkbutton(self.quest_list, text=f'Missão {slot}  ', image=photo, compound='right',
+                           variable=var, command=self.save_quest_selection, bg=PANEL, fg=TEXT,
+                           selectcolor='#1b2c3f', activebackground=PANEL, activeforeground=TEXT,
+                           font=('Segoe UI', 10)).pack(anchor='w')
+
+    def save_quest_selection(self):
+        self.save_option('quest_titles', {slot: self.quest_rows[slot][1]
+                                         for slot, var in self.quest_vars.items() if var.get()})
+
     def load_options(self):
         p = BASE / 'data' / 'profile.json'
         if p.is_file():
@@ -483,13 +564,47 @@ class App:
 
     def refresh_target_list(self, page):
         self.save_radius()
-        if not self.pipe or self.last_status.get('state') == 'error':
+        if not self.pipe or not self.last_status.get('connected'):
             if hasattr(self, 'target_status_var'):
-                self.target_status_var.set('Conecte ao jogo para escanear os alvos da região.')
+                message = ('Aguarde a validação da conexão com o jogo.'
+                           if self.last_status.get('state') == 'initializing'
+                           else 'Conecte ao jogo para escanear os alvos da região.')
+                self.target_status_var.set(message)
             return
+        if self.active_target_scan is not None:
+            if hasattr(self, 'target_status_var'):
+                self.target_status_var.set('Aguarde a busca de alvos em andamento.')
+            return
+        self.active_target_scan = (self.pipe, page)
+        self.pending_scan_page = page
         if hasattr(self, 'target_status_var'):
             self.target_status_var.set('Escaneando região com base no raio configurado...')
-        self.job(lambda: ('scan_result', (request(self.pipe, 'scan_targets'), page)))
+
+    def poll_target_scan(self, pipe, page):
+        task = 'scan_mobs' if page == 'combat' else 'scan_gatherables'
+        try:
+            data = request(pipe, task)
+        except (OSError, ValueError, RuntimeError) as exc:
+            data = {'scan_error': str(exc)}
+        return 'scan_result', (pipe, page, data)
+
+    def finish_target_scan(self, value):
+        pipe, page, data = value
+        if self.active_target_scan != (pipe, page) or self.pipe != pipe:
+            return
+        if data.get('pending'):
+            def queue_poll():
+                if self.active_target_scan == (pipe, page) and self.pipe == pipe:
+                    self.pending_scan_page = page
+            self.root.after(650, queue_poll)
+            return
+        self.active_target_scan = None
+        if self.current_page != page:
+            return
+        if 'scan_error' in data:
+            self.target_status_var.set(f'Falha ao atualizar a lista. {data["scan_error"]}')
+            return
+        self.apply_scan_result((data, page))
 
     def apply_scan_result(self, result_tuple):
         data, page = result_tuple
@@ -547,6 +662,11 @@ class App:
         threading.Thread(target=run,daemon=True).start();return True
 
     def start(self):
+        if self.current_page == 'quests':
+            if self.quest_scan_pending or not any(var.get() for var in self.quest_vars.values()):
+                self.quest_list_status.set('Atualize a lista e marque pelo menos uma missão.')
+                return
+            self.save_quest_selection()
         self.save_radius(); self.save_stamina(); self.save_combo()   # garante que o servico leia os valores atuais
         self.want_running=True;self.pending_stop=False
         self.start_button.configure(state='disabled');self.stop_button.configure(state='normal');self.detail.set('')
@@ -561,6 +681,8 @@ class App:
 
     def connect(self):
         self.connect_button.configure(state='disabled')
+        self.pending_scan_page = None
+        self.active_target_scan = None
         self.pipe=None;self.last_status={};self.cancel_connect.clear();token=uuid.uuid4().hex
         self.badge.configure(text='Conectando…');self.status.set('Validando o jogo. Aguarde a confirmação do Windows, se aparecer.')
         def connect():
@@ -584,7 +706,7 @@ class App:
         self.job(connect)
 
     def stop(self):
-        self.want_running=False;self.pending_start=False
+        self.want_running=False;self.pending_start=False;self.relog_task=None;self.player_lost_since=None
         if self.pipe is None:
             self.cancel_connect.set();self.status.set('Conexão cancelada. Nenhum ataque foi iniciado.');return
         self.pending_stop=True;self.status.set('Encerrando a rotina…')
@@ -604,6 +726,8 @@ class App:
 
     def apply_status(self,value):
         self.last_status=value
+        if value.get('running') and value.get('player_maximum'):
+            self.relog_task=self.desired_task;self.player_lost_since=None
         if (value.get('requested_running') is False and value.get('state')=='stopped'
                 and not self.pending_start and not self.busy):
             self.want_running=False
@@ -651,8 +775,25 @@ class App:
                 if self.want_running:self.pending_start=True
                 self.apply_status(status)
             elif kind=='status':self.apply_status(value)
+            elif kind=='relog_msg':
+                self.status.set(value)
+            elif kind=='relog_done':
+                self.relogging=False;self.player_lost_since=time.monotonic()+40   # carencia antes de tentar de novo
+                if self.relog_task:
+                    self.desired_task=self.relog_task;self.want_running=True
+                    self.start_button.configure(state='disabled');self.stop_button.configure(state='normal')
+                    if self.pipe is not None and self.last_status.get('state')!='error':self.pending_start=True
+                    elif not self.busy:self.connect()
             elif kind=='scan_result':
-                self.apply_scan_result(value)
+                self.finish_target_scan(value)
+            elif kind=='quest_list':
+                self.quest_scan_pending = False
+                pipe, rows, message = value
+                if self.pipe == pipe:
+                    self.quest_rows = rows
+                    if self.current_page == 'quests':
+                        self.render_quest_list()
+                        self.quest_list_status.set(message)
             elif kind=='cancelled':
                 self.start_button.configure(state='normal');self.stop_button.configure(state='disabled')
             elif kind=='error':
@@ -661,14 +802,47 @@ class App:
                 self.start_button.configure(state='normal');self.stop_button.configure(state='disabled')
         if not self.closing:self.root.after(100,self.drain)
 
+    def check_relog(self):
+        if self.relogging or not self.relog_task or not self.auto_relog_var.get():
+            return
+        st=self.last_status
+        lost=self.pipe is None or st.get('state')=='error' or not st.get('player_maximum')
+        if not lost:
+            self.player_lost_since=None;return
+        now=time.monotonic()
+        if self.player_lost_since is None:
+            self.player_lost_since=now;return
+        if now-self.player_lost_since<20:
+            return
+        try:
+            pid=int(json.loads((BASE/'data'/'combat_session.json').read_text('utf-8'))['game_pid'])
+        except (OSError,ValueError,KeyError):
+            return
+        self.relogging=True
+        def run():
+            from aion.auto_relog import relog
+            try:
+                relog(pid,log=lambda m:self.events.put(('relog_msg',m)),
+                      cancelled=lambda:self.closing or self.relog_task is None)
+            except Exception as exc:
+                self.events.put(('relog_msg',f'Falha ao reentrar: {exc}'))
+            self.events.put(('relog_done',None))
+        threading.Thread(target=run,daemon=True).start()
+
     def poll(self):
         if self.closing:return
+        self.check_relog()
         if self.pipe is not None and not self.busy:
             if self.pending_stop:
                 self.pending_stop=False;self.job(lambda:('status',request(self.pipe,'stop')))
             elif self.pending_start and self.want_running:
                 task=self.desired_task
                 self.pending_start=False;self.job(lambda:('status',request(self.pipe,task)))
+            elif self.pending_scan_page is not None:
+                page = self.pending_scan_page
+                self.pending_scan_page = None
+                pipe = self.pipe
+                self.job(lambda: self.poll_target_scan(pipe, page))
             else:self.job(lambda:('status',request(self.pipe,'status')))
         elif self.pipe is None and not self.busy and not self.want_running:
             self.start_button.configure(state='normal');self.stop_button.configure(state='disabled')

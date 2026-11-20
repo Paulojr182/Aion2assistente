@@ -1,16 +1,17 @@
 # AION 2 Assistente
 
-Painel para ataque automatico, combo de habilidades, coleta e sincronizacao com a versao do jogo.
+Painel para ataque automático, combo de habilidades, coleta, missões e sincronização com a versão do jogo.
 
 ## Como executar
 
 1. Baixe em **Code > Download ZIP** e extraia a pasta inteira.
 2. Instale **Python 3.12 de 64 bits** pelo instalador oficial do Python para Windows, incluindo Tcl/Tk (Tkinter) e o Python Launcher.
-3. Abra o AION 2 e entre no personagem.
-4. Execute `Iniciar.cmd`, clique em **Conectar** e aceite a permissao de administrador do Windows.
-5. Configure o ataque ou a coleta e clique em **Iniciar**.
+3. Para usar **Missões**, instale o Pillow no mesmo Python com `py -3.12 -m pip install "Pillow>=11.2.1"`.
+4. Abra o AION 2 e entre no personagem.
+5. Execute `Iniciar.cmd`, clique em **Conectar** e aceite a permissão de administrador do Windows.
+6. Configure a rotina desejada e clique em **Iniciar**. Na aba **Missões**, use **Atualizar lista** e marque as missões no rastreador.
 
-O Python nao esta incluido. As dependencias adicionais de execucao ja estao nesta pasta.
+O Python e o Pillow são instalados separadamente. As demais dependências de execução estão nesta pasta.
 As configuracoes de cada pessoa sao criadas automaticamente em `data/`.
 
 ## Depois de uma atualizacao do jogo

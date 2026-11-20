@@ -23,7 +23,21 @@ def validate_resource_code(read,image_size,source_rva,definitions):
         template=templates[name];rva=source_rva+template.old_rva-source.old_rva
         if not 0<=rva<=image_size-len(template.expected):raise ResourceLayoutError('Código fora da imagem.')
         raw=read(rva,len(template.expected))
-        if not code_pattern(records[name]).fullmatch(raw):raise ResourceLayoutError('Corpo nativo de recursos diverge: '+name)
+        if not code_pattern(records[name]).fullmatch(raw):
+            # Nova versao do jogo pode deslocar o trecho dentro da mesma funcao: procura unico perto.
+            found=None
+            if name!='actor_source':
+                hits=set()
+                # perto do endereco esperado e dentro da propria funcao de origem (layout novo do jogo)
+                for lo,size in ((max(0,rva-0x3000),0x6000+len(template.expected)),(source_rva,0x300)):
+                    try:window=read(lo,size)
+                    except Exception:window=None
+                    if type(window) is bytes:
+                        hits.update(lo+m.start() for m in code_pattern(records[name]).finditer(window))
+                if len(hits)==1:found=hits.pop()
+            if found is None:
+                raise ResourceLayoutError('Corpo nativo de recursos diverge: '+name)
+            rva=found;raw=read(rva,len(template.expected))
         targets[name]=tuple(rva+end+struct.unpack_from('<i',raw,offset)[0] for offset,end in template.operands)
         if any(not 0<=value<image_size for value in targets[name]):raise ResourceLayoutError('Referência relativa fora da imagem.')
         if name=='actor_source':

@@ -2,7 +2,7 @@
 import argparse,json,os,re,time
 from pathlib import Path
 from aion.local_pipe import PipeAPI
-from aion.combat_protocol import parse_request
+from aion.combat_protocol import SCAN_TASKS, parse_request
 from aion.macro_reader import MacroReader
 from aion.macro_transport import MacroTransport
 from aion.macro_service import MacroService
@@ -51,13 +51,13 @@ def serve(base,pid,window,token,factory):
                 elif task=='start_gather':service.start('gathering')
                 elif task=='start_quests':service.start('quests')
                 elif task=='stop':service.stop()
-                elif task=='scan_targets':
-                    response={'id':request['id'],'ok':True,'data':service.scan_targets()}
+                elif task in SCAN_TASKS:
+                    response={'id':request['id'],'ok':True,'data':service.poll_scan(SCAN_TASKS[task])}
                 elif task=='shutdown':
                     service.stop()
                     if not service.shutdown():raise RuntimeError('O encerramento ainda não foi confirmado.')
                     stopping=True
-                if task!='scan_targets':
+                if task not in SCAN_TASKS:
                     response={'id':request['id'],'ok':True,'data':service.get_status()}
             except (OSError,ValueError,RuntimeError) as exc:
                 response={'id':request['id'] if request else None,'ok':False,'error':str(exc)}

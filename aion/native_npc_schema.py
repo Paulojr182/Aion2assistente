@@ -17,9 +17,10 @@ def validate_npc_fields(fields,definition):
     return tuple(selected)
 
 
-def find_npc_declarations(registry,definition,*,max_bytes=33554432,max_slots=524288):
+def find_npc_declarations(registry,definition,*,max_bytes=134217728,max_slots=1048576):
     process=registry.process;used=0;matches=[];scanned=0;names={}
-    if not 1<=max_bytes<=33554432 or not 1<=max_slots<=524288:
+    slots_found=[];find_npc_declarations.last_slots=slots_found
+    if not 1<=max_bytes<=134217728 or not 1<=max_slots<=1048576:
         raise ReflectionError('Limites de descoberta de NPC inválidos.')
     def read(address,size):
         nonlocal used
@@ -49,7 +50,7 @@ def find_npc_declarations(registry,definition,*,max_bytes=33554432,max_slots=524
                     except NamePoolError:names[name_index]=False
                 if not names[name_index]:continue
                 object_=registry.object(address)
-                if object_['class_name']=='ScriptStruct':matches.append(object_)
+                if object_['class_name']=='ScriptStruct':matches.append(object_);slots_found.append(first+local)
             except (PlayerObservationError,NamePoolError):continue
     return matches,scanned,used,registry.count>extent
 
@@ -68,6 +69,17 @@ def observe_npc_schema(process,roots,definition):
     method='typed_observed_index_hint'
     if not matches:
         matches,scanned,used,truncated=find_npc_declarations(registry,definition);method='bounded_registry_search'
+        found_slots=getattr(find_npc_declarations,'last_slots',[])
+        if len(matches)==1 and len(found_slots)==1:
+            # guarda a posicao achada como dica para as proximas conexoes (versao nova do jogo)
+            try:
+                import json
+                from pathlib import Path
+                path=Path(__file__).resolve().parent.parent/'npc_schema.json'
+                data=json.loads(path.read_text('utf-8'));data['observed_index_hint']=found_slots[0]
+                path.write_text(json.dumps(data,indent=1,ensure_ascii=False),'utf-8')
+            except Exception:
+                pass
     report={'game_actions_executed':False,'combat_eligibility_validated':False,'scanned_slots':scanned,
             'candidate_count':len(matches),'npc_schema_validated':False,'search_bytes':used,'search_truncated':truncated,
             'discovery_method':method}

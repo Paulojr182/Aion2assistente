@@ -375,13 +375,16 @@ class MacroTransport:
             raise RuntimeError('Fluxo aereo nao confirmado: '+str(reply.get('probe_result')))
         return reply
 
-    def next_target(self,snapshot):
+    def next_target(self,snapshot,*,skip_current=False):
         self.stop_macro(force=True)
         frame=self._frame(snapshot,'Combat_NextTarget')
         current=self.reader.snapshot()
         target=current.target
+        same_rejected_target = (skip_current and snapshot.target is not None and target is not None
+                                and target.identity == snapshot.target.identity)
         if (current.scope!=snapshot.scope or current.player_health<=0
-                or (target is not None and target.eligible and target.health>0 and target.maximum>0)):
+                or (target is not None and target.eligible and target.health>0 and target.maximum>0
+                    and not same_rejected_target)):
             raise TargetChanged('Um alvo válido apareceu antes da troca.')
         reply=self._run(make_next_target_packet(frame,session=self.reader.session,execute=True))
         if not reply.get('next_target_dispatched'):raise RuntimeError('Busca do próximo inimigo não confirmada.')

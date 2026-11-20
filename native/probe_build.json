@@ -41,9 +41,9 @@
       "supports_controlled_game_calls": true
     },
     "auto_move": {
-      "filename": "auto_move_847d6acbfaa7.dll",
-      "sha256": "90fbd6c993e709dbdebdc0d149573dd5afc385c740df31219993e7615846c0e1",
-      "source_sha256": "847d6acbfaa7b299e16170df704af1890df86ef155dcdab495133adc75eee273",
+      "filename": "auto_move_c11f006c3552.dll",
+      "sha256": "5fd40e29aabacd516763caefdfc72d4a8d957cbdd6cde747671f8349db3e7f10",
+      "source_sha256": "c11f006c35524a09a35fef7e2d17b03ae7cdae9438bbee3f15698190d9ccf364",
       "supports_controlled_game_calls": true
     },
     "autorun_toggle": {

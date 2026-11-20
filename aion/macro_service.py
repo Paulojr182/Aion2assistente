@@ -59,6 +59,11 @@ def _parse_options():
             return {'center': center, 'radius': radius, 'flight_min_stamina': stamina, 'combo': combo,
                     'combat_names': combat_names, 'gather_names': gather_names, 'waypoints': waypoints,
                     'ground_only': bool(opts.get('gather_ground_only')),
+                    'quest_slots': sorted(int(slot) for slot in opts.get('quest_titles', {})
+                                          if slot in ('1', '2', '3', '4', '5'))
+                                   if isinstance(opts.get('quest_titles'), dict)
+                                   else [int(x) for x in str(opts.get('quest_slots', '')).split(',') if x.strip().isdigit()],
+                    'quest_titles': opts.get('quest_titles') or {},
                     'combat_exclude': bool(opts.get('combat_exclude_targets')),
                     'gather_exclude': bool(opts.get('gather_exclude_targets'))}
     except Exception:
@@ -73,6 +78,8 @@ class MacroService:
         self.desired=threading.Event();self.closing=threading.Event()
         self.lock=threading.Lock();self.thread=None;self.mode='combat';self.request_generation=0
         self.backend=None
+        self.scan_lock = threading.Lock()
+        self.scans = {}
         self.status={'connected':False,'running':False,'routine':'combat','state':'initializing','message':'Validando a conexão com o jogo…'}
 
     def update(self,**values):
@@ -82,85 +89,110 @@ class MacroService:
         with self.lock:
             return {**self.status,'requested_running':self.desired.is_set(),'requested_routine':self.mode}
 
-    def scan_targets(self):
+    def read_quest_marker(self, backend, snapshot):
+        target = snapshot.target
+        result = {'mob': target.label, 'identity': target.identity, 'marked': None}
+        try:
+            result['marked'] = backend.reader.quest_target_marker(snapshot)
+        except (AttributeError, OSError, ValueError, RuntimeError) as exc:
+            result['error'] = str(exc)
+        self.update(quest_target_check=result)
+        return result['marked']
+
+    def poll_scan(self, scope):
+        with self.scan_lock:
+            if scope in self.scans:
+                result = self.scans[scope]
+                if result is None:
+                    return {'pending': True}
+                del self.scans[scope]
+                return result
+            self.scans[scope] = None
+
+        def run():
+            try:
+                result = self.scan_targets(scope)
+            except Exception as exc:
+                result = {'scan_error': str(exc)}
+            with self.scan_lock:
+                self.scans[scope] = result
+
+        threading.Thread(target=run, name='AionTargetScan', daemon=True).start()
+        return {'pending': True}
+
+    def scan_targets(self, scope=None):
         backend = self.backend
         if backend is None or not hasattr(backend, 'reader'):
             return {'monsters': [], 'gatherables': []}
         reader = backend.reader
-        try:
-            import importlib
-            import aion.map_nav_probe
-            importlib.reload(aion.map_nav_probe)
-            aion.map_nav_probe.probe_nav(reader)
-        except Exception:
-            pass
-        opts = _parse_options()
-        radius = opts.get('radius') or 10000.0
+        radius = _parse_options().get('radius') or 10000.0
+        return {
+            'monsters': self._scan_monsters(reader, radius) if scope != 'gathering' else [],
+            'gatherables': self._scan_gatherables(reader, radius) if scope != 'combat' else [],
+        }
 
+    def _scan_gatherables(self, reader, radius):
         gather_radius = max(radius, 20000.0)
         gatherables = []
-        try:
-            from .friendly_names import resolve_gather_name
-            report = reader.gather_sources()
-            for t in report.get('targets', ()):
-                raw_name = t.get('source', {}).get('name')
-                dist = t.get('distance_engine_units', 0.0)
-                if raw_name and dist <= gather_radius:
-                    disp_name = resolve_gather_name(raw_name)
-                    if disp_name not in gatherables:
-                        gatherables.append(disp_name)
-        except Exception:
-            pass
+        from .friendly_names import resolve_gather_name
+        report = reader.gather_sources()
+        for t in report.get('targets', ()):
+            raw_name = t.get('source', {}).get('name')
+            dist = t.get('distance_engine_units', 0.0)
+            if raw_name and dist <= gather_radius:
+                disp_name = resolve_gather_name(raw_name)
+                if disp_name not in gatherables:
+                    gatherables.append(disp_name)
 
+        return gatherables
+
+    def _scan_monsters(self, reader, radius):
         monsters = []
-        try:
-            from .friendly_names import resolve_monster_name
-            with reader.process(33554432) as process:
-                from .native_player import observe_player, ObjectRegistry
-                from .reflection_fields import ReflectionSchema
-                from .native_positions import actor_position
-                from .native_scene import observe_scene
-                from .native_npc import read_cached_npc
-                import math
-                player = observe_player(process, reader.roots)
-                if player.get('player_present'):
-                    registry = ObjectRegistry(process, reader.roots)
-                    pawn = registry.object(player['roles']['player']['address'])
-                    schema = ReflectionSchema(registry, max_bytes=524288)
-                    pos_info = actor_position(registry, schema, pawn)
-                    p_pos = pos_info.get('position')
-                    scene = observe_scene(process, reader.roots, report_limit=512, known_keys_only=True, class_filter='BPCh_NpcBase_C')
-                    seen = set()
-                    mob_radius = max(radius, 15000.0)
-                    for collection in scene.get('collections', ()):
-                        for entry in collection.get('entries', ()):
-                            identity = (entry['index'], entry['serial'])
-                            if identity in seen:
+        from .friendly_names import resolve_monster_name
+        with reader.process(33554432) as process:
+            from .native_player import observe_player, ObjectRegistry
+            from .reflection_fields import ReflectionSchema
+            from .native_positions import actor_position
+            from .native_scene import observe_scene
+            from .native_npc import read_cached_npc
+            import math
+            player = observe_player(process, reader.roots)
+            if player.get('player_present'):
+                registry = ObjectRegistry(process, reader.roots)
+                pawn = registry.object(player['roles']['player']['address'])
+                schema = ReflectionSchema(registry, max_bytes=524288)
+                pos_info = actor_position(registry, schema, pawn)
+                p_pos = pos_info.get('position')
+                scene = observe_scene(process, reader.roots, report_limit=512, known_keys_only=True, class_filter='BPCh_NpcBase_C')
+                seen = set()
+                mob_radius = max(radius, 15000.0)
+                for collection in scene.get('collections', ()):
+                    for entry in collection.get('entries', ()):
+                        identity = (entry['index'], entry['serial'])
+                        if identity in seen:
+                            continue
+                        seen.add(identity)
+                        try:
+                            actor = registry.resolve_pair(*identity)
+                            if actor is None:
                                 continue
-                            seen.add(identity)
-                            try:
-                                actor = registry.resolve_pair(*identity)
-                                if actor is None:
+                            actor_pos = actor_position(registry, schema, actor)
+                            a_pos = actor_pos.get('position')
+                            if p_pos and a_pos:
+                                d = math.hypot(p_pos[0] - a_pos[0], p_pos[1] - a_pos[1])
+                                if d > mob_radius:
                                     continue
-                                actor_pos = actor_position(registry, schema, actor)
-                                a_pos = actor_pos.get('position')
-                                if p_pos and a_pos:
-                                    d = math.hypot(p_pos[0] - a_pos[0], p_pos[1] - a_pos[1])
-                                    if d > mob_radius:
-                                        continue
-                                defn = read_cached_npc(registry, schema, actor, reader.npc_layout, reader.npc_enums)
-                                if defn.get('base_definition_attackable'):
-                                    internal = defn.get('internal_name', {}).get('base', '')
-                                    res = defn.get('resource_name', {}).get('base', '')
-                                    lvl = defn.get('level')
-                                    m_label = resolve_monster_name(internal, res, lvl)
-                                    if m_label and m_label not in monsters:
-                                        monsters.append(m_label)
-                            except Exception:
-                                pass
-        except Exception:
-            pass
-        return {'monsters': monsters, 'gatherables': gatherables}
+                            defn = read_cached_npc(registry, schema, actor, reader.npc_layout, reader.npc_enums)
+                            if defn.get('base_definition_attackable'):
+                                internal = defn.get('internal_name', {}).get('base', '')
+                                res = defn.get('resource_name', {}).get('base', '')
+                                lvl = defn.get('level')
+                                m_label = resolve_monster_name(internal, res, lvl)
+                                if m_label and m_label not in monsters:
+                                    monsters.append(m_label)
+                        except Exception:
+                            pass
+        return monsters
 
 
     # --- farm de coleta (chao + alto) usado pelo painel -------------------------------------
@@ -205,8 +237,20 @@ class MacroService:
                 routine.waypoints = list(opts.get('waypoints') or [])
                 routine.ground_only = ground_only
                 self._farm_routine = routine
-                routine.run(radius=opts['radius'], center=opts['center'])
-                if not stop(): log('Coleta encerrada.')
+                # So termina quando o usuario parar: qualquer encerramento interno recomeca o ciclo.
+                while not stop():
+                    try:
+                        routine.position_reset = False
+                        routine.run(radius=opts['radius'], center=opts['center'])
+                        if stop(): break
+                        log('Rotina reiniciada; continuando o ciclo de pontos.')
+                    except Exception as exc:
+                        if stop(): break
+                        log(f'Erro na coleta ({exc}); recomeçando em 3 s.')
+                    for fn in (nav.release_all, lambda: nav.set_running(False)):
+                        try: fn()
+                        except Exception: pass
+                    time.sleep(3)
             except Exception as exc:
                 log(f'Coleta interrompida: {exc}')
             finally:
@@ -250,11 +294,6 @@ class MacroService:
                 try:
                     backend=self.factory(lambda text:self.update(message=text))
                     self.backend=backend
-                    try:
-                        import aion.map_nav_probe
-                        aion.map_nav_probe.probe_nav(backend.reader)
-                    except Exception:
-                        pass
                     break
                 except (RegistryChanged,NamePoolChanged):
                     if attempt==4:
@@ -263,9 +302,15 @@ class MacroService:
                     if self.closing.wait(0.25):
                         return
             opts=_parse_options()
-            loop=MacroLoop(backend,names=opts['combat_names'],center=opts['center'],radius=opts['radius'])
+            loop=MacroLoop(backend,names=opts['combat_names'],center=None,radius=opts['radius'])  # centro = onde deu play
             activity_adapter=None;activity_mode=None;activity_generation=None;activity_message=None;last_preview=-1.0;unstable=0;defeated=deque(maxlen=32);defeated_total=0;attacked={};damage_events=0;last_scope=None;reported_deaths=set();collect_at=None;pending_collections=0
-            autodefending=False;last_gather_health=None;current_position=None;last_pos_poll=-1.0;observed_monsters=set()
+            autodefending=False;quest_driver=None;quest_generation=None;last_gather_health=None;current_position=None;last_pos_poll=-1.0;observed_monsters=set()
+            quest_rejected_targets = set()
+            quest_scan_resume = 0.0
+            quest_candidate = None
+            quest_candidate_since = 0.0
+            quest_negative_reads = 0
+            quest_marker_preview_at = 0.0
             self.update(connected=True,state='stopped',message='Pronto para iniciar.')
             while not self.closing.is_set():
                 active=self.desired.is_set()
@@ -299,7 +344,11 @@ class MacroService:
                     # Stop requested during a read must win over the old value.
                     active=self.desired.is_set() and not self.closing.is_set()
                     with self.lock:current_mode=self.mode;current_generation=self.request_generation
-                    if active and current_mode in ('gathering','quests'):
+                    if (not active and current_mode == 'quests' and time.monotonic() >= quest_marker_preview_at
+                            and snapshot.target is not None and snapshot.target.eligible and snapshot.target.health > 0):
+                        quest_marker_preview_at = time.monotonic() + 1.0
+                        self.read_quest_marker(backend, snapshot)
+                    if active and current_mode=='gathering':
                         if last_gather_health is not None and snapshot.player_health < last_gather_health:
                             if snapshot.target is None or not snapshot.target.eligible:
                                 try:
@@ -383,7 +432,7 @@ class MacroService:
                         step_wait = 0.01 if (act_cmd and getattr(act_cmd, 'operation', None) == 'navigate') else self.interval
                         self.closing.wait(step_wait)
                         continue
-                    if not active and current_mode in ('gathering','quests'):
+                    if not active and current_mode=='gathering':
                         if activity_adapter is not None:
                             activity_adapter.policy.stop()
                             activity_adapter=None;activity_mode=None
@@ -416,7 +465,7 @@ class MacroService:
                             reported_deaths.add(identity)
                             pending_collections+=1
                             if collect_at is None:
-                                collect_at=now+0.35
+                                collect_at=now if current_mode=='quests' else now+0.35
                     else:
                         collect_at=None
                         pending_collections=0
@@ -439,18 +488,86 @@ class MacroService:
                             else:
                                 state={'state':'collecting','message':'Alvo derrotado.'}
                             pending_collections-=1
-                            collect_at=now+0.35 if pending_collections else None
+                            collect_at=(now if current_mode=='quests' else now+0.35) if pending_collections else None
                         else:
                             state={'state':'collecting','message':'Aguardando os itens do inimigo.'}
                     else:
                         try:
                             c_opts = _parse_options()
                             loop.names = frozenset(c_opts['combat_names'])
-                            loop.center = c_opts['center']
                             loop.radius = c_opts['radius']
                             if loop.combo != c_opts['combo']:
                                 loop.combo = c_opts['combo']; loop.combo_index = 0
-                            state=loop.step(snapshot,running=active,now=now)
+                            quest_phase=None
+                            marked=None
+                            if current_mode=='quests' and active:
+                                loop.names=frozenset();loop.radius=None
+                                if quest_driver is None or quest_generation!=current_generation:
+                                    from .quest_driver import QuestDriver,click_quest
+                                    from .quest_tracker import read_quest_tracker
+                                    window=getattr(backend.reader,'window',None)
+                                    titles=c_opts.get('quest_titles', {})
+                                    quest_driver=QuestDriver(c_opts.get('quest_slots') or [1],
+                                        press=lambda d,key=None,w=window:click_quest(w,d,key),
+                                        titles=titles,
+                                        read_tracker=(lambda w=window:read_quest_tracker(w)) if titles else None)
+                                    quest_generation=current_generation
+                                tgt=snapshot.target
+                                engaged=bool(tgt is not None and tgt.eligible and tgt.health>0 and tgt.maximum>0)
+                                if engaged and quest_driver.phase=='fight':
+                                    marked = self.read_quest_marker(backend, snapshot)
+                                candidate = (snapshot.scope, current_generation, quest_driver.index, tgt.identity) if engaged else None
+                                if candidate != quest_candidate:
+                                    quest_candidate, quest_candidate_since = candidate, now
+                                    quest_negative_reads = 0
+                                quest_negative_reads = quest_negative_reads + 1 if marked is False else 0
+                                quest_phase,quest_msg=quest_driver.tick(
+                                    tuple(current_position) if current_position else None,marked is True,now)
+                                self.update(quest_click=quest_driver.last_click)
+                            elif (current_mode=='quests' and quest_driver is not None
+                                  and quest_driver.phase=='done' and quest_generation==current_generation):
+                                quest_phase,quest_msg=quest_driver.tick(None,False,now)
+                            elif not active:
+                                quest_driver=None
+                            if quest_phase in ('travel', 'waiting', 'done'):
+                                quest_rejected_targets.clear()
+                                quest_scan_resume = 0.0
+                                loop.step(snapshot,running=False,now=now)
+                                state={'state':{'travel':'searching','waiting':'waiting','done':'stopped'}[quest_phase],
+                                       'message':quest_msg}
+                                if quest_phase=='done' and active:
+                                    with self.lock:
+                                        if self.request_generation==current_generation:
+                                            self.desired.clear()
+                                    active=False
+                            elif quest_phase=='fight' and engaged:
+                                if marked is True:
+                                    quest_rejected_targets.clear()
+                                    quest_scan_resume = 0.0
+                                    state=loop.step(snapshot,running=True,now=now)
+                                else:
+                                    loop.step(snapshot,running=False,now=now)
+                                    if quest_negative_reads < 2 and now - quest_candidate_since < 0.35:
+                                        state={'state':'waiting','message':f'Relendo a marca de missão em {tgt.label}.'}
+                                    elif now < quest_scan_resume:
+                                        state={'state':'waiting','message':'Aguardando antes de procurar outros alvos de missão.'}
+                                    elif now < loop.next_search:
+                                        state={'state':'searching','message':'Confirmando a troca de alvo.'}
+                                    elif tgt.identity in quest_rejected_targets or len(quest_rejected_targets) >= 16:
+                                        quest_rejected_targets.clear()
+                                        quest_scan_resume = now + 0.75
+                                        state={'state':'waiting','message':'Nenhum alvo marcado confirmado.'}
+                                    else:
+                                        loop.next_search = now + 0.15
+                                        try:
+                                            backend.next_target(snapshot,skip_current=True)
+                                        except TargetChanged:
+                                            pass
+                                        else:
+                                            quest_rejected_targets.add(tgt.identity)
+                                        state={'state':'searching','message':f'Pulando {tgt.label}: marca de missão não confirmada.'}
+                            else:
+                                state=loop.step(snapshot,running=active,now=now)
                         except (SnapshotUnavailable,RegistryChanged,NamePoolChanged):
                             backend.stop_macro(force=False)
                             self.update(state='waiting',running=active,macro_active=None,
@@ -466,7 +583,7 @@ class MacroService:
                                 attacked[identity]=snapshot.target.health
                                 while len(attacked)>128:
                                     attacked.pop(next(iter(attacked)))
-                    self.update(**state,connected=True,running=active,routine='combat',
+                    self.update(**state,connected=True,running=active,routine='quests' if current_mode=='quests' else 'combat',
                         macro_active=state['state']=='attacking' if active else (False if previously_running else snapshot.macro_active),
                         player_health=snapshot.player_health,player_maximum=snapshot.player_maximum,
                         player_position=current_position,nearby_monsters=sorted(observed_monsters),
@@ -478,7 +595,11 @@ class MacroService:
                         defeated_targets=[list(identity) for identity in defeated],defeated_total=defeated_total,
                         damage_events=damage_events,
                         telemetry=getattr(backend,'telemetry',lambda:{})())
-                self.closing.wait(self.interval if active else 0.2)
+                if active:
+                    elapsed = time.monotonic() - now_mono
+                    self.closing.wait(max(0.0, self.interval - elapsed))
+                else:
+                    self.closing.wait(0.2)
         except Exception as exc:
             self.desired.clear()
             self.update(connected=False,running=False,state='error',macro_active=None,message='A conexão foi interrompida. Reconecte ao jogo.',detail=str(exc))

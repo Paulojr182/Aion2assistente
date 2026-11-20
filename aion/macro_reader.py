@@ -14,7 +14,7 @@ from .native_resources import actor_resources
 from .native_target import observe_target
 from .scene_objects import SceneReadError,SceneChanged
 from .dialog_map import DialogMapError
-from .target_code import recover_visibility
+from .target_code import recover_visibility, widget_visibility
 from .npc_layout import recover_npc_layout,validate_npc_layout
 from .native_npc_schema import observe_npc_schema
 from .native_npc import read_cached_npc
@@ -202,6 +202,29 @@ class MacroReader:
         with self.process(33554432) as process:
             if self.quest_anchors is None:self.quest_anchors=recover_quest_code(process,self.base)
             return observe_quests(process,self.roots,self.base,self.quest_anchors)
+
+    def quest_target_marker(self, snapshot):
+        """Read the interaction marker on the exact selected enemy's nameplate."""
+        with self.process() as process:
+            registry = ObjectRegistry(process, self.roots)
+            player = observe_player(process, self.roots)
+            if not player['player_present']:
+                raise TargetChanged('Personagem indisponível para ler a marca de missão.')
+            registry.allow_widgets(player['roles']['player']['class_address'])
+            actor = registry.resolve_pair(*snapshot.target.identity)
+            if actor is None:
+                raise TargetChanged('O alvo mudou antes da leitura da marca de missão.')
+            schema = ReflectionSchema(registry, max_bytes=524288)
+            component = schema.linked(actor, 'AionCharacter', 'NameplateWidgetComponent')
+            nameplate = schema.linked(component, 'AionLevelUIComponent', 'LevelUI') if component else None
+            marker = (schema.linked(nameplate, 'AionWidget_NamePlateChar', 'P_Pan_InteractionMarker')
+                      if nameplate else None)
+            if marker is None:
+                return None
+            visible = widget_visibility(schema, marker, self.visibility, self.target_definitions)
+            schema.verify()
+            registry.verify()
+            return visible['locally_visible'] if visible['slate_source'] != 'absent' else None
 
     def snapshot(self):
         for attempt in range(2):

@@ -1,14 +1,14 @@
-# Gerado por sincronizar_versao.py em 2026-11-13 20:23:51 para imagem 428019712
-expected_game_image_size=428019712
-move_to_location_rva=154065728
-stop_move_rva=156171808
-macro_start_state_rva=149847632
-macro_stop_state_rva=149847888
-map_request_init_rva=148093712
-map_position_start_rva=154064736
-map_position_stop_rva=154068464
-map_manager_init_rva=135956688
-map_manager_submit_rva=148312528
-map_manager_cancel_rva=148313424
-stop_reason_global_rva=251701092
-mouse_gate_global_rva=251445256
+# Gerado por sincronizar_versao.py em 2026-11-18 19:01:48 para imagem 427819008
+expected_game_image_size=427819008
+move_to_location_rva=153885568
+stop_move_rva=155984896
+macro_start_state_rva=149682960
+macro_stop_state_rva=149683216
+map_request_init_rva=147953872
+map_position_start_rva=153884576
+map_position_stop_rva=153888304
+map_manager_init_rva=135947392
+map_manager_submit_rva=148172688
+map_manager_cancel_rva=148173584
+stop_reason_global_rva=0
+mouse_gate_global_rva=251249224
